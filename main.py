@@ -80,27 +80,36 @@ class Container:
             print("No Viscosity, Default estimate of h = 10 W/m^2K applied")
             self.outside_h = 10  # W/m^2K
             return
+        if "prandtl" in keys:
+            p_num = kwargs["prandtl"]
+        else:
+            p_num = 0
+            print("No Prandtl, Default estimate of h = 10 W/m^2K applied")
+            self.outside_h = 10  # W/m^2K
+            return
+
         if self.k_val is None or self.k_val == 0:
             print("No k_val, Default estimate of h = 10 W/m^2K applied")
             self.outside_h = 10  # W/m^2K
             return
+
         g = 9.81  # m/s^2
         delta_t = 15  # K
         rayleigh_num = (g * beta * delta_t * self.height ** 3) / (viscosity * alpha)
-        if rayleigh_num > 10 ** 9:
-            self.outside_h = (self.k_val * 0.13 * rayleigh_num ** (1 / 3)) / self.height
+        print("Rayleigh Number: {:.2f}".format(rayleigh_num))
+        if 10 ** 9 < rayleigh_num < 10 ** 12:
+            nusselt_num = 0.13 * rayleigh_num ** (1/3)
+            print("Nusselt Number: {:.2f}".format(nusselt_num))
+            self.outside_h = nusselt_num * self.k_val / self.height
             print("Outside h = {:.2f}".format(self.outside_h))
+            return
         else:
-            if "prandtl" in keys:
-                p_num = kwargs["prandtl"]
-                nusselt_num = (p_num / (p_num + 0.986 * p_num ** (1 / 2) + 0.492)) ** (1 / 4) * rayleigh_num ** (1 / 4)
-                self.outside_h = nusselt_num * self.k_val / self.height
-                print("Outside h = {:.2f}".format(self.outside_h))
-            else:
-                p_num = 0
-                print("No Prandtl, Default estimate of h = 10 W/m^2K applied")
-                self.outside_h = 10  # W/m^2K
-                return
+            # Use Churchill and Chu (1975)
+            nusselt_num = (0.825 + (0.387 * rayleigh_num ** (1/6)) / (1 + (0.492 / p_num) ** (9/16)) ** (8/27)) ** 2
+            print("Nusselt Number: {:.2f}".format(nusselt_num))
+            self.outside_h = nusselt_num * self.k_val / self.height
+            print("Outside h = {:.2f}".format(self.outside_h))
+            return
 
     def optimize_insulation_thickness(self):
         if self.k_val is None or self.k_val == 0:
@@ -116,10 +125,12 @@ class Container:
             return
         if self.k_val is None or self.k_val == 0:
             self.u_val = self.outside_h
+            print("U-Val: {:.2f}".format(self.u_val))
             return
         else:
             self.u_val = ((1 / self.outside_h) * (self.radius / (self.radius + self.insulation_thickness)) +
                           (self.radius / self.k_val) * np.log((self.radius + self.insulation_thickness) / self.radius))
+            print("U-Val: {:.2f}".format(self.u_val))
             return
 
 
@@ -345,6 +356,12 @@ def simulate(tank_radius, tank_height, insulation_thickness, insulation_k, initi
         container_natural_heat_loss.append(container_heat_loss_for_hour / 1000)
         net_heat_gain.append(total_heat_gain_for_hour / 1000)
 
+    # Net Values
+    print("Total Heat Gain via Solar Collectors: {:.2f} kJ".format(np.sum(solar_collector_heat_gain)))
+    print("Total Heat Loss via Outside Air: {:.2f} kJ".format(np.sum(container_natural_heat_loss)))
+    print("Total Heat Loss via Home Consumption: {:.2f} kJ".format(np.sum(home_consumption_heat_loss)))
+    print("Net Heat Gain / Loss throughout the Day: {:.2f} kJ".format(np.sum(net_heat_gain)))
+
     # Plotting
     hour_scale = np.linspace(0, 24, 24)
     fig1 = plt.figure(num=1, clear=True)
@@ -396,13 +413,13 @@ def simulate(tank_radius, tank_height, insulation_thickness, insulation_k, initi
 
 
 if __name__ == "__main__":
-    container_tank_radius = 1       # m
-    container_tank_height = 1       # m
-    test_insulation_thickness = 0.077        # m (Optimized Thickness is 0.063 m)
+    container_tank_radius = 0.5       # m
+    container_tank_height = 1         # m
+    test_insulation_thickness = 0.0726   # m (Optimized Thickness is 0.69 m Resulting in Net Daily Heat Gain, and 3 K higher temp)
     test_insulation_k = 0.046            # W/mK, for Mineral wool granules Foam
     test_initial_water_temp = 330        # K
     test_water_volume = (container_tank_height * np.pi * container_tank_radius ** 2) * 1000                # L
-    type_1_solar_collectors = 1
+    type_1_solar_collectors = 0
     type_2_solar_collectors = 0
     type_3_solar_collectors = 1
     test_outside_air_temp = 300          # K
